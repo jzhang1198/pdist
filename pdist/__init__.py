@@ -1,5 +1,4 @@
 
-from multiprocessing import Pool
 from Bio import SeqIO
 from tqdm import tqdm
 import numpy as np
@@ -73,7 +72,7 @@ def pwise_blosum_worker(args):
     return BLOSUM62[seq1, seq2].sum(axis=1)
 
 
-def pwise_blosum(ali_arr: np.ndarray, pairs: np.ndarray, batch_size: int, multiprocess: bool):
+def pwise_blosum(ali_arr: np.ndarray, pairs: np.ndarray, batch_size: int):
 
     # tokenize the alignment
     def map_func(element):
@@ -81,12 +80,15 @@ def pwise_blosum(ali_arr: np.ndarray, pairs: np.ndarray, batch_size: int, multip
     vectorized_map_func = np.vectorize(map_func)
     tokenized_ali = vectorized_map_func(ali_arr)
 
-    # configure parallelization over threads
-    n_threads = int(os.cpu_count() / 2) if multiprocess else 1
-    print(f'Running pairwise blosum calculation on {n_threads} thread(s).')
-    pair_batches = [(tokenized_ali, pairs[i:i + int(batch_size), :]) for i in range(0, len(pairs), int(batch_size))]
-    with Pool(n_threads) as pool:
-        similarities = list(tqdm(pool.imap(pwise_blosum_worker, pair_batches), total=len(pair_batches)))
+    similarities = []
+    for pair_batch in tqdm([pairs[i:i + int(batch_size), :] for i in range(0, len(pairs), int(batch_size))], desc='Computing pairwise BLOSUM similarities.', unit='batch'):
+
+        # Compute the similarity matrix using broadcasting
+        seq1 = tokenized_ali[pair_batch[:, 0]]
+        seq2 = tokenized_ali[pair_batch[:, 1]]
+
+        pair_similarities = BLOSUM62[seq1, seq2].sum(axis=1)
+        similarities.append(pair_similarities)
 
     similarities = np.hstack(similarities)
     distance_list = np.hstack([pairs, similarities[:, np.newaxis]])

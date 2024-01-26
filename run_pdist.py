@@ -14,7 +14,6 @@ def init_parser():
     parser.add_argument('--msa-fmt', type=str, default='stockholm', help='File format of the MSA. Can be any format compatible with SeqIO.read() from BioPython.')
     parser.add_argument('--distance', type=str, default='pid', help='Sequence metric to compute. Can be percent identity (pid) or BLOSUM62 similarity (BLOSUM62).')
     parser.add_argument('--batch-size', type=int, default=1000000, help='Batch size of pairs used during calculation of BLOSUM62 similarities. If you have a large number of very long sequences, you might consider decreasing this to avoid issues with memory.')
-    parser.add_argument('--multiprocess', help='Turns on parallelization of BLOSUM62 similarity calculations across threads.')
     return parser
 
 
@@ -27,7 +26,6 @@ if __name__ == '__main__':
     outdir = args.outpath 
     batch_size = int(args.batch_size)
     distance = args.distance
-    multiprocess = False if not args.multiprocess else True
 
     task_id = int(os.environ.get("SGE_TASK_ID", 1)) - 1
     n_jobs = int(os.environ.get("SGE_TASK_LAST", 1)) 
@@ -40,7 +38,7 @@ if __name__ == '__main__':
     if distance == 'BLOSUM62':
         pairs = distribute_pairs(len(aligned_seqs), task_id, n_jobs)
         cleaned_aligned_seqs = clean_ali(aligned_seqs, remove_lowercase=True)
-        distance_list = pwise_blosum(cleaned_aligned_seqs, pairs, batch_size, multiprocess)
+        distance_list = pwise_blosum(cleaned_aligned_seqs, pairs, batch_size)
         np.savez(os.path.join(outdir, f'blosum_scores{task_id}.npz'), ids=np.array(ids), distance_list=distance_list)
 
     else:

@@ -5,7 +5,7 @@ import argparse
 
 
 def init_parser():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Wrapper script over run_pdist.py for submitting SGE jobs.')
     parser.add_argument('outpath', type=str, help='Path to output directory.')
     parser.add_argument('msa_file', type=str, help='Path to multiple sequence alignment file.')
     parser.add_argument('conda_env_name', type=str, help='Name of conda environment to run program in.')
@@ -46,7 +46,7 @@ if __name__ == '__main__':
         time_allocation=time_allocation,
         memory_allocation=memory_allocation
     )
-    job.submit(script='./run_pdist.py', arguments=[
+    job.submit(script='./run_pdist.py', script_args=[
         outpath,
         msa_file,
         '--msa-fmt',

@@ -39,7 +39,7 @@ if __name__ == '__main__':
         pairs = distribute_pairs(len(aligned_seqs), task_id, n_jobs)
         cleaned_aligned_seqs = clean_ali(aligned_seqs, remove_lowercase=True)
         distance_list = pwise_blosum(cleaned_aligned_seqs, pairs, batch_size)
-        np.savez(os.path.join(outdir, f'blosum_scores{task_id}.npz'), ids=np.array(ids), distance_list=distance_list)
+        np.savez(os.path.join(outdir, f'{BLOSUM_OUTPUT_NAME}{task_id}.npz'), ids=np.array(ids), distance_list=distance_list)
 
     else:
 
@@ -54,4 +54,4 @@ if __name__ == '__main__':
 
         print('Reformatting output from esl-alipid into a matrix.')
         pid_matrix = reformat_esl_output(esl_output, ids)
-        np.savez(os.path.join(outdir, f'pid{task_id}.npz'), ids=np.array(ids), pid=pid_matrix)
+        np.savez(os.path.join(outdir, f'{PID_OUTPUT_NAME}{task_id}.npz'), ids=np.array(ids), pid=pid_matrix)

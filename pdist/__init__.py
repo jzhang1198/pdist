@@ -33,7 +33,7 @@ def read_BLOSUM62(
 
 
 BLOSUM62, TOK2INDEX = read_BLOSUM62()
-
+PID_OUTPUT_NAME, BLOSUM_OUTPUT_NAME = 'pid', 'blosum_scores'
 
 def distribute_pairs(l: int, task_id: int, n_jobs: int):
     pairs = np.vstack(np.tril_indices(l, k=0)).T

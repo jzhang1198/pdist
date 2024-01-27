@@ -2,6 +2,7 @@
 
 from PyClust import SGEJob
 import argparse
+import os
 
 
 def init_parser():
@@ -46,7 +47,7 @@ if __name__ == '__main__':
         time_allocation=time_allocation,
         memory_allocation=memory_allocation
     )
-    job.submit(script='./run_pdist.py', script_args=[
+    job.submit(script=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'run_pdist.py'), script_args=[
         outpath,
         msa_file,
         '--msa-fmt',

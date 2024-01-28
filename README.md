@@ -1,19 +1,22 @@
 # pdist
 
-A collection of Python scripts for scalable calculation of pairwise distances between aligned protein sequences. `pdist` supports percent identity and BLOSUM62 similarity as distance metrics.  
+A collection of Python scripts for scalable calculation of pairwise distances between aligned protein sequences. 
 
 ## Quickstart
 
-Ensure that you have the dependencies within `requirements.txt` installed. If you are parallelizing your pairwise calculations across multiple cores on Wynton (or any other SGE supercomputing cluster), you will need to also install clone [`PyClust`](https://github.com/jzhang1198/PyClust) and install it to your environment by running `pip install -e .` at the root of the repo.
+Ensure that you have the dependencies within `requirements.txt` installed. If you are parallelizing your pairwise calculations across multiple cores on Wynton (or any other SGE supercomputing cluster), you will need to also clone [`PyClust`](https://github.com/jzhang1198/PyClust) and install it to your environment by running `pip install -e .` at the root of the repo.
 
-You will need to also install `esl-alipid`, which is included as a mini-app within the [HMMER](http://hmmer.org) software. After installation, ensure that you have appended the path to the directory containing `esl-alipid` to your path variable in `.bashrc`. Alternatively, if you are running this on Wynton, you can just append this path to your path variable:
+## Types of distance calculations
+`pdist` supports calculation of similarities and percent identities as sequence distance metrics. 
 
-`/wynton/home/kortemme/jzhang1198/code/hmmer-3.3.2/easel/miniapps`
+There are many ways to calculate percent identities. Here, I follow the convention used in the `esl-alipid` miniapp from HMMER. Briefly, pairwise percent identity is calculated by counting the number of identical residues in consensus columns of the alignment and then dividing this quantity by `min(len1, len2)`. The sequence lengths are calculated by counting all non-gap positions in the alignment.
 
-## Running on a single core
+For pairwise similarity calculations, I only consider the columns covered in the alignment. One can provide their own custom substitution matrix by following the instructions included in the `subsmats` folder in this repo.
 
-`run_pdist.py` will scale well up to 10K aligned sequences. 
+## Running on a single device
+
+`run_pdist.py` is designed to run on a single device. For larger alignments, pairwise distance calculations can be parallelized across different CPUs on the same device. Run the script with the `-h` flag for detailed usage instructions.
 
 ## Running on a cluster
 
-`run_pdist_distributed.py` is a wrapper over `run_pdist.py` for submission of array jobs on a SGE supercomputing cluster. Note that the pairwise sequence identity measurements cannot be parallelized across multiple cores! I have tried implementing my own pairwise sequence identity calculator, but I have found it to be much less efficient than the implementation in `esl-alipid`. 
+`run_pdist_distributed.py` is a wrapper over `run_pdist.py` for submission of array jobs on a SGE supercomputing cluster. Run the script with the `-h` flag for detailed usage instructions.

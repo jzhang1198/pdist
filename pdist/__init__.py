@@ -1,98 +1,139 @@
 
+from multiprocessing import Pool
 from Bio import SeqIO
 from tqdm import tqdm
 import numpy as np
 import os 
 
 
-def read_BLOSUM62(
-        add_gap: bool = True
-        ):
-    
+class MSA:
+    def __init__(
+            self, 
+            file: str, 
+            fmt: str,
+            remove_lowercase: bool = True
+            ):
+        """ 
+        Data class for modeling multiple sequence alignments.
+
+        NOTE: By default, this class will interpret lowercase characters in an
+        alignment as unaligned residues and will remove them. This behaviour can
+        be toggled by setting remove_lowercase to False.
+        """
+
+        seqs, ids = zip(*[(str(r.seq), r.id) for r in SeqIO.parse(file, fmt)])
+        l, w = len(seqs), len(seqs[0])
+        seqs = np.array(list(''.join([seq for seq in seqs]))).reshape((l, w))
+
+        # clean the seqs 
+        non_gap_columns = np.where(~np.all(seqs == '-', axis=0))[0]
+        seqs = seqs[:, non_gap_columns]
+
+        # remove unaligned columns
+        if remove_lowercase:
+            unaligned_columns = np.where(~np.any(np.char.islower(seqs), axis=0))[0]
+            seqs = seqs[:, unaligned_columns]
+        else:
+            seqs = np.char.upper(seqs)
+
+        self.seqs, self.ids = seqs, ids
+
+
+class pdist:
+
+    def __init__(
+            self,
+            subsmat: np.ndarray,
+            tokenizer: dict, 
+            batch_size: int,
+            n_cpus: int,
+            pid: bool
+    ):
+        
+        self.subsmat = subsmat
+        self.tokenizer = tokenizer
+        self.batch_size = batch_size
+        self.n_cpus = n_cpus
+        self.pid = pid
+        self.gap_token_idx = tokenizer.get('-')
+
+    @staticmethod
+    def _pdist(seqs: np.ndarray, pair_batch: np.ndarray, subsmat: np.ndarray):
+        seqpairs = np.stack([seqs[pair_batch[:, 0]], seqs[pair_batch[:, 1]]])
+        pair_distances = subsmat[seqpairs[0], seqpairs[1]].sum(axis=1)
+        return pair_distances
+
+    @staticmethod
+    def _pdist_pid(seqs: np.ndarray, pair_batch: np.ndarray, subsmat: np.ndarray, gap_token_idx: int):
+        seqpairs = np.stack([seqs[pair_batch[:, 0]], seqs[pair_batch[:, 1]]])
+        seqlens = np.min((seqpairs != gap_token_idx).sum(axis=2), axis=0)
+        pair_n_ids = subsmat[seqpairs[0], seqpairs[1]].sum(axis=1)
+        return pair_n_ids / seqlens
+
+
+    def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
+
+        # tokenize seqs
+        def map_func(element):
+            return self.tokenizer.get(element)
+        vectorized_map_func = np.vectorize(map_func)
+        seqs = vectorized_map_func(seqs)
+
+        log_str = 'BLOSUM similarities' if not self.pid else 'sequence identities'
+        pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
+        pair_batches = tqdm(pair_batches, desc='Computing pairwise {}.'.format(log_str), unit='batch') if verbose else pairs
+        
+        if self.n_cpus == 1:
+            distances = []
+            for pair_batch in pair_batches:
+
+                if not self.pid:
+                    distances.append(pdist._pdist(seqs, pair_batch, self.subsmat)) 
+
+                else:
+                    distances.append(pdist._pdist_pid(seqs, pair_batch, self.subsmat, self.gap_token_idx))
+
+        else:
+            with Pool(self.n_cpus) as pool:
+
+                if not self.pid:
+                    args = [(s,b,m) for s, b, m in zip(list(pair_batch), )]
+
+                else:
+                    args = [() ]
+
+                pass
+            pass
+
+        distances = np.hstack(distances)
+        weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
+        return weighted_adj_list
+
+
+def read_subsmat(subsmat: str):
+
     root_dir = os.path.dirname(os.path.abspath(__file__))
-    blosum62 = os.path.join(root_dir, 'BLOSUM62.txt')
-    
-    with open(blosum62, 'r') as f:
-        blosum62 = f.readlines()
+    subsmat_dir = os.path.join(os.path.dirname(root_dir), 'subsmats')
+    available_subsmats = os.listdir(subsmat_dir)
 
-    blosum62 = [l.strip('\n') for l in blosum62]
-    alphabet = blosum62[1].replace(' ', '')
+    if '{}.npz'.format(subsmat) not in available_subsmats:
+        raise Exception('ERROR: {} is not a valid substitution matrix. Ensure that your substitution matrix is saved as an npz file, per the instructions in the README. Available substitution matrices are: {}'.format(subsmat, ', '.join(available_subsmats)))
 
-    blosum62 = [blosum62[i][2:].split(' ') for i in range(2, len(blosum62))]
-    blosum62 = [j for r in blosum62 for j in r if j != '']
-    blosum62 = np.array(blosum62, dtype=int).reshape((len(alphabet), len(alphabet)))
+    subsmat = os.path.join(subsmat_dir, '{}.npz'.join())
+    subsmat_data = np.load(subsmat)
 
-    if add_gap:
-        blosum62 = np.hstack([blosum62, np.zeros(len(alphabet))[:, np.newaxis]])
-        alphabet += '-'
-        blosum62 = np.vstack([blosum62, np.zeros(len(alphabet))])
+    if 'alphabet' not in subsmat_data.keys() or 'subsmat' not in subsmat_data.keys():
+        raise Exception('''ERROR: {} is not a valid substitution matrix. Ensure that your npz file includes 'alphabet' and 'subsmat' arrays, per the instructions in the README.''')
 
-    tok2index = {token:index for index, token in enumerate(alphabet)}
+    tok2index = {tok:i for i, tok in enumerate(subsmat_data['alphabet'])}
 
-    return blosum62, tok2index
+    return subsmat_data['subsmat'], tok2index
 
-
-BLOSUM62, TOK2INDEX = read_BLOSUM62()
-PID_OUTPUT_NAME, BLOSUM_OUTPUT_NAME = 'pid', 'blosum_scores'
 
 def distribute_pairs(l: int, task_id: int, n_jobs: int):
     pairs = np.vstack(np.tril_indices(l, k=0)).T
     sele = np.array([i for i in range(len(pairs)) if i % n_jobs == task_id])
     return pairs[sele]
-
-
-def load_ali(file: str, fmt: str):
-
-    aligned_seqs, ids = zip(*[(str(r.seq), r.id) for r in SeqIO.parse(file, fmt)])
-    l, w = len(aligned_seqs), len(aligned_seqs[0])
-    ali_arr = np.array(list(''.join([seq for seq in aligned_seqs]))).reshape((l, w))
-    return ali_arr, ids
-
-
-def clean_ali(ali: np.ndarray, remove_lowercase=True):
-
-    # remove all gap columns
-    non_gap_columns = np.where(~np.all(ali == '-', axis=0))[0]
-    ali = ali[:, non_gap_columns]
-
-    # remove unaligned columns
-    if remove_lowercase:
-        unaligned_columns = np.where(~np.any(np.char.islower(ali), axis=0))[0]
-        ali = ali[:, unaligned_columns]
-    else:
-        ali = np.char.upper(ali)
-
-    return ali
-
-
-def pwise_blosum_worker(args):
-    tokenized_ali, pair_batch = args
-    seq1 = tokenized_ali[pair_batch[:, 0]]
-    seq2 = tokenized_ali[pair_batch[:, 1]]
-    return BLOSUM62[seq1, seq2].sum(axis=1)
-
-
-def pwise_blosum(ali_arr: np.ndarray, pairs: np.ndarray, batch_size: int):
-
-    # tokenize the alignment
-    def map_func(element):
-        return TOK2INDEX.get(element)
-    vectorized_map_func = np.vectorize(map_func)
-    tokenized_ali = vectorized_map_func(ali_arr)
-
-    similarities = []
-    for pair_batch in tqdm([pairs[i:i + int(batch_size), :] for i in range(0, len(pairs), int(batch_size))], desc='Computing pairwise BLOSUM similarities.', unit='batch'):
-
-        # Compute the similarity matrix using broadcasting
-        seq1 = tokenized_ali[pair_batch[:, 0]]
-        seq2 = tokenized_ali[pair_batch[:, 1]]
-
-        pair_similarities = BLOSUM62[seq1, seq2].sum(axis=1)
-        similarities.append(pair_similarities)
-
-    similarities = np.hstack(similarities)
-    distance_list = np.hstack([pairs, similarities[:, np.newaxis]])
-    return distance_list
 
 
 def reformat_esl_output(esl_output, ids: np.ndarray):

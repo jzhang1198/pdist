@@ -2,18 +2,20 @@
 
 from pdist import *
 import numpy as np
-import subprocess
 import argparse
 import os 
 
 
 def init_parser():
-    parser = argparse.ArgumentParser(description='Calculates pairwise distances between aligned sequences. Supports usage of BLOSUM62 similarity or percent identity as the distance metric. \nNOTE: pairwise percent identities are calculated using esl-alipid from hmmer-3.3.2. You can either install this yourself and append the path to the compiled binaries in your PATH variable in bashrc. Alternatively, you can append the path to the binaries I have compiled to your PATH variable.')
+    available_subsmats = [f.split('.')[0] for f in os.listdir(get_subsmat_dir())]
+    parser = argparse.ArgumentParser(description='Calculates pairwise distances between aligned sequences.')
     parser.add_argument('outpath', type=str, help='Path to output directory.')
     parser.add_argument('msa_file', type=str, help='Path to multiple sequence alignment file.')
+    parser.add_argument('--subsmat', type=str, default='pid', help='The substitution matrix to use. If left unassigned, the program will default to calculating percent identities. Available subsmats: {}'.format(', '.join(available_subsmats)))
     parser.add_argument('--msa-fmt', type=str, default='stockholm', help='File format of the MSA. Can be any format compatible with SeqIO.read() from BioPython.')
-    parser.add_argument('--distance', type=str, default='pid', help='Sequence metric to compute. Can be percent identity (pid) or BLOSUM62 similarity (BLOSUM62).')
-    parser.add_argument('--batch-size', type=int, default=1000000, help='Batch size of pairs used during calculation of BLOSUM62 similarities. If you have a large number of very long sequences, you might consider decreasing this to avoid issues with memory.')
+    parser.add_argument('--batch-size', type=int, default=1000000, help='Batch size of pairs used during calculation of BLOSUM62 similarities. If you have a ver large number of very long sequences, you might consider decreasing this to avoid memory issues.')
+    parser.add_argument('--n-cpus', type=int, default=1, help='Number of CPUs (on the same device) to parallelize distance calculations over. Number of available CPUs can be determined with os.cpu_count().')
+    parser.add_argument('--v', action='store_true', help='Turn on verbose output.')
     return parser
 
 
@@ -23,9 +25,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     msa_file, msa_fmt = args.msa_file, args.msa_fmt
+    subsmat_type = args.subsmat
+    calculate_pid = True if subsmat_type == 'pid' else False
     outdir = args.outpath 
     batch_size = int(args.batch_size)
-    distance = args.distance
+    n_cpus = int(args.n_cpus)
+    verbose = True if args.v else False
 
     task_id = int(os.environ.get("SGE_TASK_ID", 1)) - 1
     n_jobs = int(os.environ.get("SGE_TASK_LAST", 1)) 
@@ -33,25 +38,24 @@ if __name__ == '__main__':
     if 'SGE_TASK_ID' in os.environ:
         print('Running on SGE compute nodes.')
 
-    aligned_seqs, ids = load_ali(msa_file, msa_fmt)
+    msa = MSA(msa_file, msa_fmt)
+    subsmat, tokenizer = read_subsmat(subsmat_type)
+    msa.tokenize_seqs(tokenizer)
 
-    if distance == 'BLOSUM62':
-        pairs = distribute_pairs(len(aligned_seqs), task_id, n_jobs)
-        cleaned_aligned_seqs = clean_ali(aligned_seqs, remove_lowercase=True)
-        distance_list = pwise_blosum(cleaned_aligned_seqs, pairs, batch_size)
-        np.savez(os.path.join(outdir, f'{BLOSUM_OUTPUT_NAME}{task_id}.npz'), ids=np.array(ids), distance_list=distance_list)
+    if n_cpus > 1:
+        distance_calculator = pdistMultiprocess(subsmat, batch_size, n_cpus)
 
     else:
+        pool = multiprocessing.Pool(n_cpus)
+        distance_calculator = pdist(subsmat, batch_size)
 
-        print('Running esl-alipid')
-        esl_command = ' '.join([
-            'esl-alipid',
-            '--informat',
-            msa_fmt,
-            msa_file
-            ])
-        esl_output = subprocess.run(esl_command, shell=True, capture_output=True, text=True)
+    pairs = distribute_pairs(msa.l, task_id, n_jobs)
+    distance_list = distance_calculator(msa.tokenized_seqs[:, ~msa.uncovered_mask], pairs, verbose)
 
-        print('Reformatting output from esl-alipid into a matrix.')
-        pid_matrix = reformat_esl_output(esl_output, ids)
-        np.savez(os.path.join(outdir, f'{PID_OUTPUT_NAME}{task_id}.npz'), ids=np.array(ids), pid=pid_matrix)
+    # divide by sequence length if doing pid calculation
+    if calculate_pid:
+        seqlens = msa.get_seqlens()
+        min_seqlens = np.stack([seqlens[pairs[:, 0]], seqlens[pairs[:, 1]]]).T.min(axis=1)
+        distance_list[:, 2] = distance_list[:, 2] / min_seqlens
+
+    np.savez(os.path.join(outdir, f'pdist_output{task_id}.npz'), ids=msa.ids, distances=distance_list, distance_metric=np.array([subsmat_type]))

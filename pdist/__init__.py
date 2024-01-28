@@ -3,6 +3,7 @@ import multiprocessing
 from Bio import SeqIO
 from tqdm import tqdm
 import numpy as np
+import subprocess
 import os 
 
 
@@ -183,12 +184,19 @@ def distribute_pairs(l: int, task_id: int, n_jobs: int):
     return pairs[sele]
 
 
-def reformat_esl_output(esl_output, ids: np.ndarray):
+def run_esl_alipid(msa_file: str, msa_fmt: str, ids: np.ndarray, outdir: str):
     """ 
-    Deprecated function for re-formatting output from esl-alipid (a miniapp
-    from the hmmer) into a matrix.
+    Deprecated function for running esl-alipid (a miniapp from the hmmer) and 
+    reformatting its output into a matrix.
     """
 
+    esl_command = ' '.join([
+        'esl-alipid',
+        '--informat',
+        msa_fmt,
+        msa_file
+    ])
+    esl_output = subprocess.run(esl_command, shell=True, capture_output=True, text=True)
     lines = esl_output.stdout.split('\n')[1:-1]
 
     # re-format esl-alipid output
@@ -204,5 +212,5 @@ def reformat_esl_output(esl_output, ids: np.ndarray):
     pid_matrix[seqindex1, seqindex2] = pid
     pid_matrix = pid_matrix + pid_matrix.T - np.diag(np.diag(pid_matrix))
     np.fill_diagonal(pid_matrix, 1)
-    return pid_matrix
 
+    return pid_matrix

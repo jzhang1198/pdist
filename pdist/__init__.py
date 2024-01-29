@@ -100,8 +100,7 @@ def get_subsmat_dir():
 
 def read_subsmat(subsmat: str):
 
-    root_dir = '/Users/jonathanzhang/Documents/code/scripts/pdist/pdist'
-    # root_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(os.path.abspath(__file__))
     subsmat_dir = os.path.join(os.path.dirname(root_dir), 'subsmats')
     available_subsmats = os.listdir(subsmat_dir)
 

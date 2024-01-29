@@ -93,7 +93,7 @@ def pwise_distance(seqs, pair_batches, subsmat, verbose, cpu_index):
 
     
 def get_subsmat_dir():
-    root_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(__file__)
     subsmat_dir = os.path.join(os.path.dirname(root_dir), 'subsmats')
     return subsmat_dir
 

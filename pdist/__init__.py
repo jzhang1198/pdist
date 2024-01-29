@@ -91,65 +91,6 @@ def pwise_distance(seqs, pair_batches, subsmat, verbose, cpu_index):
 
     return distances
 
-
-# class pdist:
-
-#     def __init__(
-#             self,
-#             subsmat: np.ndarray,
-#             batch_size: int,
-#     ):
-        
-#         self.subsmat = subsmat
-#         self.batch_size = batch_size
-
-#     def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
-
-#         pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
-#         distances = pwise_distance((seqs, pair_batch, self.subsmat, verbose))
-
-
-#         distances = []
-#         pair_batches = tqdm(pair_batches, desc='Computing pairwise distances.', unit='batch') if verbose else pair_batches
-#         for pair_batch in pair_batches:
-#             distances.append(pwise_distance((seqs, pair_batch, self.subsmat))) 
-
-#         distances = np.hstack(distances)
-#         weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
-#         return weighted_adj_list
-    
-    
-# class pdistMultiprocess(pdist):
-#     """ 
-#     Child pdist class for parallelizing pairwise distance calculations across many CPUs on the same machine.
-#     """
-
-#     def __init__(
-#             self, 
-#             subsmat: np.ndarray,
-#             batch_size: int,
-#             n_cpus: int
-#             ):
-        
-#         super().__init__(subsmat, batch_size)
-#         self.n_cpus = n_cpus
-
-#     def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
-
-#         pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
-
-#         pool = multiprocessing.Pool(self.n_cpus)
-#         args = [(seqs, batch, self.subsmat) for batch in pair_batches]
-#         if verbose:
-#             distances = list(tqdm(pool.imap(pwise_distance, args)))
-
-#         else:
-#             distances = list(pool.imap(pwise_distance, args))
-            
-#         distances = np.hstack(distances)
-#         weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
-#         return weighted_adj_list
-    
     
 def get_subsmat_dir():
     root_dir = os.path.dirname(os.path.abspath(__file__))

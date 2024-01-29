@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from multiprocessing import Pool, RLock
 from pdist import *
 import numpy as np
 import argparse
@@ -42,15 +43,24 @@ if __name__ == '__main__':
     subsmat, tokenizer = read_subsmat(subsmat_type)
     msa.tokenize_seqs(tokenizer)
 
+    pairs = distribute_pairs(msa.l, task_id, n_jobs)
+    pair_batches = [pairs[i:i + int(batch_size), :] for i in range(0, len(pairs), int(batch_size))]
+
     if n_cpus > 1:
-        distance_calculator = pdistMultiprocess(subsmat, batch_size, n_cpus)
+
+        if n_cpus > len(pair_batches):
+            print('WARNING: The number of CPUs to distribute batches across is greater than the total number of batches. CPU count is being set to the total number of bacthes')
+            n_cpus = len(pair_batches)
+
+        pool = Pool(n_cpus, initargs=(RLock(), ), initializer=tqdm.set_lock)
+        args = [(msa.tokenized_seqs[:, ~msa.uncovered_mask], batches, subsmat, verbose, i) for i, batches in enumerate(split_batches(pair_batches, n_cpus))]
+        distances = list(pool.starmap(pwise_distance, args))
+        distances = np.hstack(distances)
 
     else:
-        pool = multiprocessing.Pool(n_cpus)
-        distance_calculator = pdist(subsmat, batch_size)
+        distances = pwise_distance(msa.tokenized_seqs[:, ~msa.uncovered_mask], pair_batches, subsmat, verbose, 0)
 
-    pairs = distribute_pairs(msa.l, task_id, n_jobs)
-    distance_list = distance_calculator(msa.tokenized_seqs[:, ~msa.uncovered_mask], pairs, verbose)
+    distance_list = np.hstack([pairs, distances[:, np.newaxis]])
 
     # divide by sequence length if doing pid calculation
     if calculate_pid:

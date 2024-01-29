@@ -1,5 +1,4 @@
 
-import multiprocessing
 from Bio import SeqIO
 from tqdm import tqdm
 import numpy as np
@@ -75,68 +74,81 @@ class MSA:
         return (~self.gap_mask).sum(axis=1)
 
 
-def pwise_distance(args: tuple):
-    seqs, pair_batch, subsmat = args
-    seqpairs = np.stack([seqs[pair_batch[:, 0]], seqs[pair_batch[:, 1]]])
-    pair_distances = subsmat[seqpairs[0], seqpairs[1]].sum(axis=1)
-    return pair_distances
+def split_batches(a, n):
+    k, m = divmod(len(a), n)
+    return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
 
-class pdist:
+def pwise_distance(seqs, pair_batches, subsmat, verbose, cpu_index):
 
-    def __init__(
-            self,
-            subsmat: np.ndarray,
-            batch_size: int,
-    ):
+    pair_batches = tqdm(pair_batches, desc=f'Computing pairwise distances on CPU {cpu_index}.', unit='batch') if verbose else pair_batches
+
+    distances = []
+    for pair_batch in pair_batches:
+        seqpairs = np.stack([seqs[pair_batch[:, 0]], seqs[pair_batch[:, 1]]])
+        distances.append(subsmat[seqpairs[0], seqpairs[1]].sum(axis=1))
+    distances = np.hstack(distances)
+
+    return distances
+
+
+# class pdist:
+
+#     def __init__(
+#             self,
+#             subsmat: np.ndarray,
+#             batch_size: int,
+#     ):
         
-        self.subsmat = subsmat
-        self.batch_size = batch_size
+#         self.subsmat = subsmat
+#         self.batch_size = batch_size
 
-    def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
+#     def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
 
-        pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
-        
-        distances = []
-        pair_batches = tqdm(pair_batches, desc='Computing pairwise distances.', unit='batch') if verbose else pair_batches
-        for pair_batch in pair_batches:
-            distances.append(pwise_distance((seqs, pair_batch, self.subsmat))) 
+#         pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
+#         distances = pwise_distance((seqs, pair_batch, self.subsmat, verbose))
 
-        distances = np.hstack(distances)
-        weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
-        return weighted_adj_list
+
+#         distances = []
+#         pair_batches = tqdm(pair_batches, desc='Computing pairwise distances.', unit='batch') if verbose else pair_batches
+#         for pair_batch in pair_batches:
+#             distances.append(pwise_distance((seqs, pair_batch, self.subsmat))) 
+
+#         distances = np.hstack(distances)
+#         weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
+#         return weighted_adj_list
     
     
-class pdistMultiprocess(pdist):
-    """ 
-    Child pdist class for parallelizing pairwise distance calculations across many CPUs on the same machine.
-    """
+# class pdistMultiprocess(pdist):
+#     """ 
+#     Child pdist class for parallelizing pairwise distance calculations across many CPUs on the same machine.
+#     """
 
-    def __init__(
-            self, 
-            subsmat: np.ndarray,
-            batch_size: int,
-            n_cpus: int
-            ):
+#     def __init__(
+#             self, 
+#             subsmat: np.ndarray,
+#             batch_size: int,
+#             n_cpus: int
+#             ):
         
-        super().__init__(subsmat, batch_size)
-        self.n_cpus = n_cpus
+#         super().__init__(subsmat, batch_size)
+#         self.n_cpus = n_cpus
 
-    def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
+#     def __call__(self, seqs: np.ndarray, pairs: np.ndarray, verbose: bool):
 
-        pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
+#         pair_batches = [pairs[i:i + int(self.batch_size), :] for i in range(0, len(pairs), int(self.batch_size))]
 
-        pool = multiprocessing.Pool(self.n_cpus)
-        args = [(seqs, batch, self.subsmat) for batch in pair_batches]
-        if verbose:
-            distances = list(tqdm(pool.imap(pwise_distance, args)))
+#         pool = multiprocessing.Pool(self.n_cpus)
+#         args = [(seqs, batch, self.subsmat) for batch in pair_batches]
+#         if verbose:
+#             distances = list(tqdm(pool.imap(pwise_distance, args)))
 
-        else:
-            distances = list(pool.imap(pwise_distance, args))
+#         else:
+#             distances = list(pool.imap(pwise_distance, args))
             
-        distances = np.hstack(distances)
-        weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
-        return weighted_adj_list
+#         distances = np.hstack(distances)
+#         weighted_adj_list = np.hstack([pairs, distances[:, np.newaxis]])
+#         return weighted_adj_list
     
     
 def get_subsmat_dir():
